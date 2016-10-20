@@ -1,0 +1,189 @@
+<?php
+set_time_limit (15);
+error_reporting(E_ALL);                // Comment out after debugging. Helps isolate any errors in your error.log for initial setup.
+ini_set('display_errors', '1');        // Comment out after debugging. Helps isolate any errors in your error.log for initial setup.
+#ini_set("gd.jpeg_ignore_warning", 0); // Uncomment if your IP Camera generates bad .jpg format in your error logs.
+//
+// You must first edit the files below before uncommenting one of them. You CANNOT uncomment both of them.
+// They allow you to restrict access to SecureImageDisplay.php from being accessed from anything else but what they say.
+// This allows you to protect SecureImageDisplay.php from being referenced. Unless it's being referenced by one of the below.
+#include("RestrictToSecureImageDisplayLogin.php");
+#include("RestrictToSecureImageDisplayHtm.php");
+//
+// $ipcam_url = Must be changed to be the real-time image source leaving '&cnt=".microtime(true);' at end of the line.
+// Examples below are for Foscam IP Camera types. Which maybe different for other IP Cameras or other real-time image sources:
+//
+// MJPEG  = "http://DDNSorISPIPAddress:PortForCamera/snapshot.cgi?user=admin&pwd=YourPassword&cnt=".microtime(true);
+// H.264  = "http://DDNSorISPIPAddress:PortForCamera/CGIProxy.fcgi?cmd=snapPicture2&usr=admin&pwd=YourPassword&cnt=".microtime(true);
+//
+// **** $ipcam_url below. MUST be changed to equal your IP Camera using the above syntax for your IP Camera type ***
+$ipcam_url = "http://nwcybernet.dyndns.org:9004/CGIProxy.fcgi?cmd=snapPicture2&usr=admin&pwd=when5able&cnt=".microtime(true);
+//
+// *** Important To Read Carefully ***
+#include("CheckForBlockedPorts.php");  // MUST be uncommented ("Remove Leading #") To see if your server allows the cameras port to be opened.
+$no_save_to_disk = false;              // If false then source images received in real-time are also stored on disk.
+                                       // If "$no_save_to_disk = true" then if your image source is offline or not available
+                                       // then there will be no image to pull from disk when or if that happens. Leaving an empty image.
+                                       // Whereas if "$no_save_to_disk = false" when or if your image source is offline or not available
+                                       // then the last image stored on disk will be displayed, avoiding displaying an empty image.
+                                       //
+                                       // Multiple real-time image sources example:
+                                       // If you are going to use multiple copies of this for multiple IP Cameras that will be storing
+                                       // images on disk. Then you should copy an empty copy of ipcam1.jpg to another .jpg filename and
+                                       // change $last_image_name below to point to the correct .jpg file for each IP Camera that will be 
+                                       // storing images on disk. Of course you can also access the .jpg file directly as a image source.
+                                       // If needed. Once an image from the real-time source like a IP Camera, has been stored there.
+                                       //
+$last_image_name = "ipcam3.jpg";       // This file MUST be present in this same folder if "$no_save_to_disk = false".
+                                       //
+$show_logo = true;                    // Must be set to true if logo .png file below is to be merged with cameras image. Otherwise should be false.
+$logo_name = "";                       // Must be .png file for logo image. If = "" no logo will be merged with the cameras image.
+$logox = 0;                            // x position in cameras image for logo.
+$logoy = 0;                            // y position in cameras image for logo.
+                                       //
+$seconds_creation = 0;                 // If images age on disk is less than this value, in seconds. A image on disk will be returned.
+                                       // when $no_save_to_disk = false. Until that images age on disk is equal to or older then the
+                                       // number of seconds specified for this value.
+                                       //
+                                       // Note: If you use this copy of the Interface to feed anything that uses this Interface as a
+                                       //       back-end for real-time refreshed images. This value must be zero to avoid any race
+                                       //       conditions when $no_save_to_disk = false. Otherwise the last image on disk would be
+                                       //       fed at a high rate to any front-end making the requests when or if the IP Camera was
+                                       //       offline or not available.
+if (empty ($_GET["size"])){                                       //
+	$resized_percentage = .40;             // Must have a value. If value is > 0 and < .99 percent real-time images will be resized to percent size.
+}
+else{
+	$resized_percentage = .80;
+}
+                                       // $resized_width and $resized_height will only be used when $resized_percentage = 0;
+$resized_width = 160;                  // Will always be this width even if or when original image received changes size if $resized_percentage = 0.
+$resized_height = 120;                 // Will always be this height even if or when original image received changes size if $resized_percentage = 0. 
+$best_quality = true;                  // There are two methods to do image resize. If true then image will have better quality.
+$font_name = "arial.ttf";              // This file MUST be present in this same folder if date or any text is used in the image.
+$show_date_time = false;                // If true date will be displayed in image.
+$time_offset = -0;                     // Your web server maybe in a different time zone. If so to display your time. +-3600 for each hour difference.
+date_default_timezone_set('America/Los_Angeles');
+$date_format = "m/d/Y H:i:s";          // Date format can be changed to European format "d/m/Y H:i:s";
+$date_font_size = 8;                   // Date Text Font size. Higher number equals larger text.
+$text_after_date = " ";         // Text following Date. If "$show_date_time = false" then text will display without Date unless = "";
+$date_x = 10;                          // Date text x position on image. Will need to be set based on image size.
+$date_y = 64;                          // Date text y position on image. Will need to be set based on image size.
+$show_custom_text = false;              // If "$show_custom_text = true" then $custom_text will be displayed on image. 
+$custom_font_size = 15;                // Custom Text Font size. Higher number equals larger text.
+$custom_text = "Driveway";          // If "$show_custom_text = true" then this text will be displayed on image on custom text line.
+$custom_x = 8;                         // Custom x position on image. Will need to be set based on image size.
+$custom_y = 116;                       // Custom y position on image. Will need to be set based on image size.
+// **************************************
+// Please do NOT change anything below  *
+// **************************************
+if (!$no_save_to_disk) {
+    $filename = realpath($last_image_name);
+    $time_img = filemtime($filename);
+    if ((empty($filename)) || (empty($time_img))) {
+         print "jpg image file is missing from disk";
+         die();
+    }
+}
+$time_now = time();
+if ((($no_save_to_disk) || ($seconds_creation == 0)) || (filesize($filename) <= 0 || ($time_now - $time_img) > $seconds_creation)) {
+      if (($no_save_to_disk) && ($resized_percentage == 100) && (!$show_date_time) && (!$show_custom_text) && (empty($text_after_date)) && (!$show_logo)) {
+           $curl_handle = curl_init();
+           curl_setopt($curl_handle, CURLOPT_BINARYTRANSFER, 1);
+           curl_setopt($curl_handle, CURLOPT_RETURNTRANSFER, 1);
+           curl_setopt($curl_handle, CURLOPT_SSL_VERIFYHOST, 0);
+           curl_setopt($curl_handle, CURLOPT_URL, $ipcam_url);
+           $my_image = curl_exec($curl_handle);
+           curl_close($curl_handle);
+           if (empty($my_image))
+               print "";
+           else {
+               header("Content-Type: image/jpeg");
+               print $my_image;
+           }
+      } else {
+          if ($show_logo) {
+              $valid_logo_file = realpath($logo_name);
+              if (empty($valid_logo_file)) {
+                  print "Logo file is not defined or missing from disk";
+                  die();
+              }
+              $image = @imagecreatefromjpeg($ipcam_url);
+              if ($image !== FALSE) {
+                  $src = @imagecreatefrompng($valid_logo_file);
+                  if ($src !== FALSE)
+                      imagecopyresampled($image, $src, $logox, $logoy, 0, 0, ImageSX($src), ImageSY($src), ImageSX($src), ImageSY($src));
+              }
+          }
+          if ($resized_percentage !== 100) {
+              if (!$show_logo)
+                  $image = @imagecreatefromjpeg($ipcam_url);
+              if ($image !== FALSE) {
+                  if ($resized_percentage !== 0) {
+                      $resized_width = ImageSX($image) * $resized_percentage;
+                      $resized_height = ImageSY($image) * $resized_percentage;
+                  }
+                  $my_image = imagecreatetruecolor($resized_width, $resized_height);
+                  if ($best_quality)
+                      imagecopyresampled($my_image, $image, 0, 0, 0, 0, $resized_width, $resized_height, ImageSX($image), ImageSY($image));
+                  else
+                      imagecopyresized($my_image, $image, 0, 0, 0, 0, $resized_width, $resized_height, ImageSX($image), ImageSY($image));
+              } else {
+                  if (!$no_save_to_disk) {
+                      header("Content-type: image/jpeg");
+                      echo file_get_contents($filename);
+                  }
+                  else
+                      print "";
+                  die();
+              }
+          }
+          else if ((!$show_logo) && ($resized_percentage == 100)) $my_image = @imagecreatefromjpeg($ipcam_url);
+          else
+               $my_image = $image;
+          if ($my_image !== FALSE) {
+              if (($show_date_time) || ($show_custom_text) || (!empty($text_after_date))) {
+                   $font = realpath($font_name);
+                   if (empty($font)) {
+                       print "Font file is missing from disk";
+                       die();
+                   }
+                   $white = imagecolorallocate($my_image, 255, 255, 255);
+                   $grey = imagecolorallocate($my_image, 128, 128, 128);
+                   $black = imagecolorallocate($my_image, 0, 0, 0);
+                   if (($show_date_time) || (!empty($text_after_date))) {
+                        if ($show_date_time)
+                            $date_text = date($date_format, ($time_now + $time_offset))." ".$text_after_date;
+                        else
+                            $date_text = $text_after_date;
+                        imagettftext($my_image, $date_font_size, 0, $date_x + 1, $date_y + 1, $grey, $font, $date_text);
+                        imagettftext($my_image, $date_font_size, 0, $date_x, $date_y, $white, $font, $date_text);
+                   }
+                   if ($show_custom_text) {
+                       imagettftext($my_image, $custom_font_size, 0, $custom_x + 1, $custom_y + 1, $grey, $font, $custom_text);
+                       imagettftext($my_image, $custom_font_size, 0, $custom_x, $custom_y, $white, $font, $custom_text);
+                   }
+              }
+              header("Content-type: image/jpeg");
+              print imagejpeg($my_image);
+          } else {
+              if (!$no_save_to_disk) {
+                  header("Content-type: image/jpeg");
+                  echo file_get_contents($filename);
+              }
+              else
+                  print "";
+              die();
+          }
+          if (!$no_save_to_disk)
+              imagejpeg($my_image, $filename);
+      }
+} else {
+    if (!$no_save_to_disk) {
+        header("Content-type: image/jpeg");
+        echo file_get_contents($filename);
+    }
+    else
+        print "";
+}
+?>
